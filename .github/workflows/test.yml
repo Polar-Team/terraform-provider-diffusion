@@ -1,0 +1,52 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.25"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build
+        run: go build -v .
+
+      - name: Test
+        run: go test -v ./...
+
+  # Acceptance tests (requires TF_ACC=1 and infrastructure)
+  # Uncomment when ready to run full integration tests
+  # acceptance:
+  #   name: Acceptance Tests
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   if: github.event_name == 'push'
+  #   env:
+  #     TF_ACC: "1"
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: go.mod
+  #     - uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_wrapper: false
+  #     - run: go test -v -timeout 30m ./internal/provider/ -run TestAcc

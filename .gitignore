@@ -1,0 +1,28 @@
+# Binaries
+terraform-provider-diffusion
+terraform-provider-diffusion.exe
+dist/
+
+# Go
+*.test
+*.out
+vendor/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# GoReleaser
+dist/
