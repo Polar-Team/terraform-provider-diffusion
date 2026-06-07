@@ -38,9 +38,8 @@ builds:
 
 archives:
   - id: provider-archives
-    builds:
-      - provider
-    format: zip
+    formats:
+      - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:

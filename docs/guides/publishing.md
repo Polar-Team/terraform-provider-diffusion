@@ -1,3 +1,10 @@
+---
+page_title: "Publishing to Registries"
+subcategory: ""
+description: |-
+  How to publish terraform-provider-diffusion to the Terraform Registry and OpenTofu Registry.
+---
+
 # Publishing terraform-provider-diffusion
 
 ## Overview
