@@ -1,0 +1,8 @@
+.terraform/
+.opentofu/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+.ssh/
+tests/validate/.ssh/
+.terraform.lock.hcl

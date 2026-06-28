@@ -1,0 +1,98 @@
+name: Terraform Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "tests/**"
+      - "internal/**"
+      - "main.go"
+      - "go.mod"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  tftest:
+    name: Integration Tests (${{ matrix.tool }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [tofu, terraform]
+        include:
+          - tool: tofu
+            setup: opentofu/setup-opentofu@v1
+            cli: tofu
+            rc_file: ~/.tofurc
+          - tool: terraform
+            setup: hashicorp/setup-terraform@v3
+            cli: terraform
+            rc_file: ~/.terraformrc
+    env:
+      TF_INPUT: "0"
+      TF_IN_AUTOMATION: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build provider
+        run: |
+          go build -o terraform-provider-diffusion .
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Set up OpenTofu
+        if: matrix.tool == 'tofu'
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: latest
+          tofu_wrapper: false
+
+      - name: Set up Terraform
+        if: matrix.tool == 'terraform'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Install Diffusion CLI
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/Polar-Team/diffusion/releases/latest | jq -r '.tag_name')
+          curl -sL "https://github.com/Polar-Team/diffusion/releases/download/${LATEST}/diffusion-linux-amd64.tar.gz" | tar xz
+          chmod +x diffusion
+          sudo mv diffusion /usr/local/bin/
+
+      - name: Create dev_overrides for provider
+        run: |
+          cat > ${{ matrix.rc_file }} << EOF
+          provider_installation {
+            dev_overrides {
+              "Polar-Team/diffusion" = "$PWD"
+            }
+            direct {}
+          }
+          EOF
+
+      - name: Run tftest — aws-ec2-checkpoint-waf
+        working-directory: tests/aws-ec2-checkpoint-waf
+        run: ${{ matrix.cli }} test -no-color
+        timeout-minutes: 15
+
+      - name: Cleanup on failure
+        if: failure()
+        working-directory: tests/aws-ec2-checkpoint-waf
+        run: ${{ matrix.cli }} destroy -auto-approve -no-color || true

@@ -3,8 +3,9 @@
 # =============================================================================
 #
 # This example:
-#   1. Provisions an AWS EC2 instance (Ubuntu 22.04)
-#   2. Deploys the Checkpoint WAF Yandex Cloud Ansible role via diffusion
+#   1. Generates an SSH key pair (tls_private_key + aws_key_pair)
+#   2. Provisions an AWS EC2 instance (Ubuntu 22.04)
+#   3. Deploys the Checkpoint WAF Yandex Cloud Ansible role via diffusion
 #
 # Usage:
 #   tofu init && tofu apply
@@ -23,6 +24,14 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0"
+    }
     diffusion = {
       source  = "Polar-Team/diffusion"
       version = ">= 0.1.0"
@@ -31,20 +40,15 @@ terraform {
 }
 
 variable "aws_region" {
-  default = "eu-central-1"
+  description = "AWS region for EC2 instance"
+  type        = string
+  default     = "us-east-1"
 }
 
 variable "instance_type" {
-  default = "t3.medium"
-}
-
-variable "key_name" {
-  description = "AWS key pair name"
+  description = "EC2 instance type"
   type        = string
-}
-
-variable "ssh_private_key_path" {
-  default = "~/.ssh/id_ed25519"
+  default     = "t3.micro"
 }
 
 provider "aws" {
@@ -54,6 +58,32 @@ provider "aws" {
 provider "diffusion" {
   container_tag = "latest-amd64"
 }
+
+# -----------------------------------------------------------------------------
+# SSH Key Generation
+# -----------------------------------------------------------------------------
+
+resource "tls_private_key" "ssh" {
+  algorithm = "ED25519"
+}
+
+resource "aws_key_pair" "diffusion" {
+  key_name_prefix = "diffusion-test-"
+  public_key      = tls_private_key.ssh.public_key_openssh
+}
+
+# Write private key to ~/.ssh so diffusion's container can mount it via /root/.ssh.
+# The container only mounts the user's ~/.ssh directory — project-local paths won't
+# be visible inside the probe/deploy containers.
+resource "local_sensitive_file" "ssh_key" {
+  content         = tls_private_key.ssh.private_key_openssh
+  filename        = pathexpand("~/.ssh/diffusion-test-ed25519")
+  file_permission = "0600"
+}
+
+# -----------------------------------------------------------------------------
+# EC2 Instance
+# -----------------------------------------------------------------------------
 
 data "aws_ami" "ubuntu" {
   most_recent = true
@@ -100,7 +130,7 @@ resource "aws_security_group" "waf" {
 resource "aws_instance" "waf" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
-  key_name               = var.key_name
+  key_name               = aws_key_pair.diffusion.key_name
   vpc_security_group_ids = [aws_security_group.waf.id]
 
   root_block_device {
@@ -109,9 +139,13 @@ resource "aws_instance" "waf" {
   }
 
   tags = {
-    Name = "diffusion-checkpoint-waf"
+    Name = "diffusion-checkpoint-waf-test"
   }
 }
+
+# -----------------------------------------------------------------------------
+# Deploy: Checkpoint WAF role via diffusion
+# -----------------------------------------------------------------------------
 
 resource "diffusion_deploy" "checkpoint_waf" {
   role_sources = [
@@ -128,7 +162,7 @@ resource "diffusion_deploy" "checkpoint_waf" {
       vars = {
         ansible_host                 = aws_instance.waf.public_ip
         ansible_user                 = "ubuntu"
-        ansible_ssh_private_key_file = var.ssh_private_key_path
+        ansible_ssh_private_key_file = local_sensitive_file.ssh_key.filename
         ansible_ssh_common_args      = "-o StrictHostKeyChecking=no"
       }
     }
@@ -147,10 +181,20 @@ resource "diffusion_deploy" "checkpoint_waf" {
   host_wait_timeout        = "5m"
 }
 
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+
 output "instance_public_ip" {
   value = aws_instance.waf.public_ip
 }
 
 output "deploy_run_id" {
   value = diffusion_deploy.checkpoint_waf.run_id
+}
+
+output "ssh_private_key" {
+  description = "Generated SSH private key (sensitive)"
+  value       = tls_private_key.ssh.private_key_openssh
+  sensitive   = true
 }

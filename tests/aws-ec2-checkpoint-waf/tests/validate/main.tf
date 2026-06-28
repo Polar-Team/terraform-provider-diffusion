@@ -1,6 +1,10 @@
 # =============================================================================
 # Validation module — checks remote host state after diffusion deploy
 # =============================================================================
+#
+# Used as a helper module by the tofu test framework.
+# Connects to the remote host via SSH and verifies deployment state.
+# =============================================================================
 
 terraform {
   required_version = ">= 1.0"
@@ -9,6 +13,14 @@ terraform {
     null = {
       source  = "hashicorp/null"
       version = ">= 3.0"
+    }
+    external = {
+      source  = "hashicorp/external"
+      version = ">= 2.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0"
     }
   }
 }
@@ -24,8 +36,16 @@ variable "ssh_user" {
 }
 
 variable "ssh_private_key" {
-  description = "Path to SSH private key"
+  description = "SSH private key content (from tls_private_key output)"
   type        = string
+  sensitive   = true
+}
+
+# Write key content to a temp file for SSH usage
+resource "local_sensitive_file" "validate_key" {
+  content         = var.ssh_private_key
+  filename        = "${path.module}/.ssh/validate_key"
+  file_permission = "0600"
 }
 
 # -----------------------------------------------------------------------------
@@ -33,17 +53,23 @@ variable "ssh_private_key" {
 # -----------------------------------------------------------------------------
 
 resource "null_resource" "check_diffusion_state" {
+  depends_on = [local_sensitive_file.validate_key]
+
+  triggers = {
+    always_run = timestamp()
+  }
+
   connection {
     type        = "ssh"
     host        = var.host
     user        = var.ssh_user
-    private_key = file(var.ssh_private_key)
+    private_key = var.ssh_private_key
     timeout     = "2m"
   }
 
   provisioner "remote-exec" {
     inline = [
-      "test -d ~/.diffusion/state && echo 'DIFFUSION_STATE_EXISTS=true' > /tmp/diffusion_check.txt || echo 'DIFFUSION_STATE_EXISTS=false' > /tmp/diffusion_check.txt",
+      "test -d ~/.diffusion/state && echo 'DIFFUSION_STATE_EXISTS=true' || echo 'DIFFUSION_STATE_EXISTS=false'",
     ]
   }
 }
@@ -54,14 +80,15 @@ data "external" "diffusion_state" {
   program = [
     "ssh",
     "-o", "StrictHostKeyChecking=no",
-    "-i", var.ssh_private_key,
+    "-o", "UserKnownHostsFile=/dev/null",
+    "-i", local_sensitive_file.validate_key.filename,
     "${var.ssh_user}@${var.host}",
     "echo '{\"exists\": \"'$(test -d ~/.diffusion/state && echo true || echo false)'\"}'",
   ]
 }
 
 # -----------------------------------------------------------------------------
-# Check: role installed (ansible roles path or diffusion cache)
+# Check: role installed
 # -----------------------------------------------------------------------------
 
 data "external" "role_installed" {
@@ -70,7 +97,8 @@ data "external" "role_installed" {
   program = [
     "ssh",
     "-o", "StrictHostKeyChecking=no",
-    "-i", var.ssh_private_key,
+    "-o", "UserKnownHostsFile=/dev/null",
+    "-i", local_sensitive_file.validate_key.filename,
     "${var.ssh_user}@${var.host}",
     "echo '{\"installed\": \"'$(find ~/.diffusion/ -name '*checkpoint*' -o -name '*waf*' 2>/dev/null | head -1 | grep -q . && echo true || echo false)'\"}'",
   ]
