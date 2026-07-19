@@ -28,10 +28,6 @@ terraform {
       source  = "hashicorp/tls"
       version = ">= 4.0"
     }
-    local = {
-      source  = "hashicorp/local"
-      version = ">= 2.0"
-    }
     diffusion = {
       source  = "Polar-Team/diffusion"
       version = ">= 0.1.0"
@@ -75,10 +71,22 @@ resource "aws_key_pair" "diffusion" {
 # Write private key to ~/.ssh so diffusion's container can mount it via /root/.ssh.
 # The container only mounts the user's ~/.ssh directory — project-local paths won't
 # be visible inside the probe/deploy containers.
-resource "local_sensitive_file" "ssh_key" {
-  content         = tls_private_key.ssh.private_key_openssh
-  filename        = pathexpand("~/.ssh/diffusion-test-ed25519")
-  file_permission = "0600"
+# Uses terraform_data (built-in) to avoid requiring the 'local' provider.
+resource "terraform_data" "ssh_key" {
+  input = tls_private_key.ssh.private_key_openssh
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      mkdir -p ~/.ssh
+      printf '%s' '${tls_private_key.ssh.private_key_openssh}' > ~/.ssh/diffusion-test-ed25519
+      chmod 600 ~/.ssh/diffusion-test-ed25519
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -f ~/.ssh/diffusion-test-ed25519"
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -148,6 +156,8 @@ resource "aws_instance" "waf" {
 # -----------------------------------------------------------------------------
 
 resource "diffusion_deploy" "checkpoint_waf" {
+  depends_on = [terraform_data.ssh_key]
+
   role_sources = [
     {
       scm     = "git"
@@ -162,7 +172,7 @@ resource "diffusion_deploy" "checkpoint_waf" {
       vars = {
         ansible_host                 = aws_instance.waf.public_ip
         ansible_user                 = "ubuntu"
-        ansible_ssh_private_key_file = local_sensitive_file.ssh_key.filename
+        ansible_ssh_private_key_file = "~/.ssh/diffusion-test-ed25519"
         ansible_ssh_common_args      = "-o StrictHostKeyChecking=no"
       }
     }
