@@ -31,6 +31,7 @@ type DeployResourceModel struct {
 	Groups                types.Map         `tfsdk:"groups"`
 	Variables             types.Map         `tfsdk:"variables"`
 	ExtraVars             types.Map         `tfsdk:"extra_vars"`
+	SSHPrivateKeyBase64   types.String      `tfsdk:"ssh_private_key_base64"`
 	SkipIfSucceededWithin types.String      `tfsdk:"skip_if_succeeded_within"`
 	HostWaitInitialDelay  types.String      `tfsdk:"host_wait_initial_delay"`
 	HostWaitInterval      types.String      `tfsdk:"host_wait_interval"`
@@ -142,6 +143,11 @@ has changed.`,
 				Optional:            true,
 				ElementType:         types.StringType,
 				MarkdownDescription: "Extra variables passed to `ansible-playbook --extra-vars`.",
+			},
+			"ssh_private_key_base64": schema.StringAttribute{
+				Optional:            true,
+				Sensitive:           true,
+				MarkdownDescription: "Base64-encoded SSH private key. Decoded at runtime and used as `ansible_ssh_private_key_file` for hosts that don't already specify one. Useful when keys are generated dynamically (e.g. `tls_private_key`) and not stored on disk.",
 			},
 			"skip_if_succeeded_within": schema.StringAttribute{
 				Optional:            true,
@@ -326,6 +332,7 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 		Groups:                groups,
 		GlobalVars:            globalVars,
 		ExtraVars:             extraVars,
+		SSHPrivateKeyBase64:   valueOrEmpty(data.SSHPrivateKeyBase64),
 		SkipIfSucceededWithin: valueOrEmpty(data.SkipIfSucceededWithin),
 		InventoryRendered:     rendered,
 	}

@@ -48,6 +48,7 @@ type DiffusionRunConfig struct {
 	Groups                []deploy.InventoryGroup
 	GlobalVars            map[string]string
 	ExtraVars             map[string]string
+	SSHPrivateKeyBase64   string
 	SkipIfSucceededWithin string
 	InventoryRendered     string
 }
@@ -147,6 +148,10 @@ func buildArgs(cfg DiffusionRunConfig) []string {
 		args = append(args, "--skip-period", cfg.SkipIfSucceededWithin)
 	}
 
+	if cfg.SSHPrivateKeyBase64 != "" {
+		args = append(args, "--ssh-key-base64", cfg.SSHPrivateKeyBase64)
+	}
+
 	if cfg.HostWaitInitialDelay != "" {
 		args = append(args, "--host-wait-initial-delay", cfg.HostWaitInitialDelay)
 	}
@@ -162,14 +167,22 @@ func buildArgs(cfg DiffusionRunConfig) []string {
 
 func computeRunID(cfg DiffusionRunConfig) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "playbook:%s\n", cfg.Playbook)
-	fmt.Fprintf(h, "skip:%s\n", cfg.SkipIfSucceededWithin)
+	if _, err := fmt.Fprintf(h, "playbook:%s\n", cfg.Playbook); err != nil {
+		panic(err)
+	}
+	if _, err := fmt.Fprintf(h, "skip:%s\n", cfg.SkipIfSucceededWithin); err != nil {
+		panic(err)
+	}
 	for _, rs := range cfg.RoleSources {
-		fmt.Fprintf(h, "role:%s:%s:%s:%s:%s:%s\n",
-			rs.SCM, rs.Version, rs.URL, rs.Galaxy, rs.Name, rs.ApplyTo)
+		if _, err := fmt.Fprintf(h, "role:%s:%s:%s:%s:%s:%s\n",
+			rs.SCM, rs.Version, rs.URL, rs.Galaxy, rs.Name, rs.ApplyTo); err != nil {
+			panic(err)
+		}
 	}
 	for k, v := range cfg.GlobalVars {
-		fmt.Fprintf(h, "var:%s=%s\n", k, v)
+		if _, err := fmt.Fprintf(h, "var:%s=%s\n", k, v); err != nil {
+			panic(err)
+		}
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
@@ -179,10 +192,15 @@ func redactArgs(args []string) []string {
 	copy(redacted, args)
 	for i, a := range redacted {
 		lower := strings.ToLower(a)
-		if strings.Contains(lower, "password") || strings.Contains(lower, "token") {
+		if strings.Contains(lower, "password") || strings.Contains(lower, "token") ||
+			strings.Contains(lower, "ssh-key-base64") {
 			if parts := strings.SplitN(a, "=", 2); len(parts) == 2 {
 				redacted[i] = parts[0] + "=***"
 			}
+		}
+		// Redact the value following --ssh-key-base64 flag (positional arg style).
+		if i > 0 && strings.Contains(strings.ToLower(redacted[i-1]), "ssh-key-base64") && !strings.HasPrefix(a, "-") {
+			redacted[i] = "***"
 		}
 	}
 	return redacted
