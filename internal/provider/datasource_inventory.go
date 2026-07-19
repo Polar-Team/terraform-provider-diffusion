@@ -33,6 +33,11 @@ type InventoryDataSourceModel struct {
 	Rendered  types.String `tfsdk:"rendered"`
 }
 
+// groupVarsModel maps a single entry in the variables block.
+type groupVarsModel struct {
+	Vars types.Map `tfsdk:"vars"`
+}
+
 func (d *InventoryDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_inventory"
 }
@@ -62,10 +67,18 @@ or passing the rendered inventory to other Terraform resources.`,
 				ElementType:         types.ListType{ElemType: types.StringType},
 				MarkdownDescription: "Map of group name → list of host names.",
 			},
-			"variables": schema.MapAttribute{
+			"variables": schema.MapNestedAttribute{
 				Optional:            true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "Global inventory variables applied to the `all` group.",
+				MarkdownDescription: "Map of group name → group variables. Use key `\"all\"` for global variables applied to the all group.",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"vars": schema.MapAttribute{
+							Optional:            true,
+							ElementType:         types.StringType,
+							MarkdownDescription: "Variables for this group.",
+						},
+					},
+				},
 			},
 			"rendered": schema.StringAttribute{
 				Computed:            true,
@@ -109,13 +122,13 @@ func (d *InventoryDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	globalVars, diags := extractStringMap(ctx, data.Variables)
+	groupVars, diags := extractGroupVars(ctx, data.Variables)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	rendered, err := deploy.BuildInventory(hosts, groups, globalVars)
+	rendered, err := deploy.BuildInventory(hosts, groups, groupVars)
 	if err != nil {
 		resp.Diagnostics.AddError("Inventory generation failed", err.Error())
 		return
@@ -193,4 +206,35 @@ func extractStringMap(ctx context.Context, m types.Map) (map[string]string, diag
 	result := make(map[string]string)
 	d := m.ElementsAs(ctx, &result, false)
 	return result, d
+}
+
+func extractGroupVars(ctx context.Context, varsMap types.Map) (deploy.GroupVars, diag.Diagnostics) {
+	if varsMap.IsNull() || varsMap.IsUnknown() {
+		return nil, nil
+	}
+
+	elements := varsMap.Elements()
+	result := make(deploy.GroupVars, len(elements))
+
+	for groupName, v := range elements {
+		obj, ok := v.(types.Object)
+		if !ok {
+			return nil, diagError("Invalid variables entry", fmt.Sprintf("variables[%q] is not an object", groupName))
+		}
+
+		var gvm groupVarsModel
+		d := obj.As(ctx, &gvm, basetypes.ObjectAsOptions{})
+		if d.HasError() {
+			return nil, d
+		}
+
+		vars, d := extractStringMap(ctx, gvm.Vars)
+		if d.HasError() {
+			return nil, d
+		}
+
+		result[groupName] = vars
+	}
+
+	return result, nil
 }
