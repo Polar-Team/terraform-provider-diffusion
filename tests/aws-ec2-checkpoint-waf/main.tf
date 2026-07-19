@@ -68,27 +68,6 @@ resource "aws_key_pair" "diffusion" {
   public_key      = tls_private_key.ssh.public_key_openssh
 }
 
-# Write private key to ~/.ssh so diffusion's container can mount it via /root/.ssh.
-# The container only mounts the user's ~/.ssh directory — project-local paths won't
-# be visible inside the probe/deploy containers.
-# Uses terraform_data (built-in) to avoid requiring the 'local' provider.
-resource "terraform_data" "ssh_key" {
-  input = tls_private_key.ssh.private_key_openssh
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      mkdir -p ~/.ssh
-      printf '%s' '${tls_private_key.ssh.private_key_openssh}' > ~/.ssh/diffusion-test-ed25519
-      chmod 600 ~/.ssh/diffusion-test-ed25519
-    EOT
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = "rm -f ~/.ssh/diffusion-test-ed25519"
-  }
-}
-
 # -----------------------------------------------------------------------------
 # EC2 Instance
 # -----------------------------------------------------------------------------
@@ -156,8 +135,6 @@ resource "aws_instance" "waf" {
 # -----------------------------------------------------------------------------
 
 resource "diffusion_deploy" "checkpoint_waf" {
-  depends_on = [terraform_data.ssh_key]
-
   role_sources = [
     {
       scm     = "git"
@@ -170,10 +147,9 @@ resource "diffusion_deploy" "checkpoint_waf" {
   hosts = {
     "waf-01" = {
       vars = {
-        ansible_host                 = aws_instance.waf.public_ip
-        ansible_user                 = "ubuntu"
-        ansible_ssh_private_key_file = "~/.ssh/diffusion-test-ed25519"
-        ansible_ssh_common_args      = "-o StrictHostKeyChecking=no"
+        ansible_host            = aws_instance.waf.public_ip
+        ansible_user            = "ubuntu"
+        ansible_ssh_common_args = "-o StrictHostKeyChecking=no"
       }
     }
   }
@@ -185,6 +161,8 @@ resource "diffusion_deploy" "checkpoint_waf" {
   variables = {
     ansible_python_interpreter = "/usr/bin/python3"
   }
+
+  ssh_private_key = tls_private_key.ssh.private_key_openssh
 
   skip_if_succeeded_within = "1h"
   host_wait_initial_delay  = "30s"
