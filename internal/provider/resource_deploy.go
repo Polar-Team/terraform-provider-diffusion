@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -31,7 +32,7 @@ type DeployResourceModel struct {
 	Groups                types.Map         `tfsdk:"groups"`
 	Variables             types.Map         `tfsdk:"variables"`
 	ExtraVars             types.Map         `tfsdk:"extra_vars"`
-	SSHPrivateKeyBase64   types.String      `tfsdk:"ssh_private_key_base64"`
+	SSHPrivateKey         types.String      `tfsdk:"ssh_private_key"`
 	SkipIfSucceededWithin types.String      `tfsdk:"skip_if_succeeded_within"`
 	HostWaitInitialDelay  types.String      `tfsdk:"host_wait_initial_delay"`
 	HostWaitInterval      types.String      `tfsdk:"host_wait_interval"`
@@ -144,10 +145,10 @@ has changed.`,
 				ElementType:         types.StringType,
 				MarkdownDescription: "Extra variables passed to `ansible-playbook --extra-vars`.",
 			},
-			"ssh_private_key_base64": schema.StringAttribute{
+			"ssh_private_key": schema.StringAttribute{
 				Optional:            true,
 				Sensitive:           true,
-				MarkdownDescription: "Base64-encoded SSH private key. Decoded at runtime and used as `ansible_ssh_private_key_file` for hosts that don't already specify one. Useful when keys are generated dynamically (e.g. `tls_private_key`) and not stored on disk.",
+				MarkdownDescription: "SSH private key in PEM format (raw text). The provider base64-encodes it automatically before passing to diffusion. Use directly with `tls_private_key.*.private_key_pem`.",
 			},
 			"skip_if_succeeded_within": schema.StringAttribute{
 				Optional:            true,
@@ -332,7 +333,7 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 		Groups:                groups,
 		GlobalVars:            globalVars,
 		ExtraVars:             extraVars,
-		SSHPrivateKeyBase64:   valueOrEmpty(data.SSHPrivateKeyBase64),
+		SSHPrivateKeyBase64:   base64EncodeIfSet(valueOrEmpty(data.SSHPrivateKey)),
 		SkipIfSucceededWithin: valueOrEmpty(data.SkipIfSucceededWithin),
 		InventoryRendered:     rendered,
 	}
@@ -371,4 +372,14 @@ func coalesce(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// base64EncodeIfSet returns the base64-encoded version of s, or "" if s is empty.
+// This allows the provider to accept raw PEM text and encode it transparently
+// before passing to the diffusion CLI which expects base64.
+func base64EncodeIfSet(s string) string {
+	if s == "" {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString([]byte(s))
 }
