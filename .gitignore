@@ -20,6 +20,9 @@ vendor/
 .vscode/
 *.swp
 
+# Git worktrees
+dev-new-features*
+
 # OS
 .DS_Store
 Thumbs.db
