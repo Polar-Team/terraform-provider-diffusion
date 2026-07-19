@@ -101,6 +101,10 @@ jobs:
           }
           EOF
 
+      - name: Initialize modules — aws-ec2-checkpoint-waf
+        working-directory: tests/aws-ec2-checkpoint-waf
+        run: ${{ matrix.cli }} init -no-color
+
       - name: Run tftest — aws-ec2-checkpoint-waf
         working-directory: tests/aws-ec2-checkpoint-waf
         run: ${{ matrix.cli }} test -no-color
