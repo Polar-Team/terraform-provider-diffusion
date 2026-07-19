@@ -125,21 +125,16 @@ run "deploy_checkpoint_waf" {
 }
 
 # -----------------------------------------------------------------------------
-# Run: Validate remote host state (inlined — no separate module needed)
+# Run: Validate remote host state (uses terraform_data provisioner)
+# The remote-exec provisioner will FAIL the apply if the checks don't pass,
+# so reaching this run block successfully proves validation passed.
 # -----------------------------------------------------------------------------
 
 run "validate_remote_state" {
   command = apply
 
-  # Diffusion state directory must exist
   assert {
-    condition     = output.diffusion_state_exists == true
-    error_message = "Diffusion state directory (~/.diffusion/state) does not exist on remote host"
-  }
-
-  # Role must be installed
-  assert {
-    condition     = output.role_installed == true
-    error_message = "Checkpoint WAF role was not installed on remote host"
+    condition     = output.validation_passed == true
+    error_message = "Post-deploy validation failed: diffusion state or role not found on remote host"
   }
 }
