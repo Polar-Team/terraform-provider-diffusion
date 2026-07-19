@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/Polar-Team/terraform-provider-diffusion/internal/deploy"
@@ -152,5 +153,64 @@ func TestComputeRunID_Length(t *testing.T) {
 	id := computeRunID(DiffusionRunConfig{})
 	if len(id) != 16 {
 		t.Errorf("expected run ID length 16, got %d", len(id))
+	}
+}
+
+func TestBuildArgs_SSHKeyBase64Included(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeyBase64: "Zm9vYmFy"}
+	args := buildArgs(c)
+	if !hasArg(args, "--ssh-key-base64", "Zm9vYmFy") {
+		t.Errorf("expected --ssh-key-base64 Zm9vYmFy, got %v", args)
+	}
+}
+
+func TestBuildArgs_SSHKeyBase64OmittedWhenEmpty(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeyBase64: ""}
+	args := buildArgs(c)
+	if hasFlag(args, "--ssh-key-base64") {
+		t.Errorf("expected --ssh-key-base64 absent when empty, got %v", args)
+	}
+}
+
+func TestBase64EncodeIfSet(t *testing.T) {
+	if got := base64EncodeIfSet(""); got != "" {
+		t.Errorf("expected empty string for empty input, got %q", got)
+	}
+
+	pem := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmU\n-----END OPENSSH PRIVATE KEY-----\n"
+	got := base64EncodeIfSet(pem)
+	want := base64.StdEncoding.EncodeToString([]byte(pem))
+	if got != want {
+		t.Errorf("expected %q, got %q", want, got)
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(got)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	if string(decoded) != pem {
+		t.Errorf("round-trip mismatch: expected %q, got %q", pem, string(decoded))
+	}
+}
+
+func TestRedactArgs_SSHKeyBase64(t *testing.T) {
+	input := []string{"deploy", "--ssh-key-base64", "c2VjcmV0a2V5"}
+	inputCopy := make([]string, len(input))
+	copy(inputCopy, input)
+
+	redacted := redactArgs(input)
+
+	if !hasArg(redacted, "--ssh-key-base64", "***") {
+		t.Errorf("expected --ssh-key-base64 value redacted to ***, got %v", redacted)
+	}
+	for _, a := range redacted {
+		if a == "c2VjcmV0a2V5" {
+			t.Errorf("raw value should not appear in redacted args, got %v", redacted)
+		}
+	}
+	for i := range input {
+		if input[i] != inputCopy[i] {
+			t.Errorf("original input slice was mutated: expected %v, got %v", inputCopy, input)
+		}
 	}
 }

@@ -1,0 +1,74 @@
+{
+  "name": "devops-senior-engineer",
+  "description": "Senior DevOps engineer specialized in CI/CD pipelines, GitHub Actions, cross-platform builds, Terraform and OpenTofu packaging, and infrastructure automation. Works inside dev-new-features/.",
+  "promptFile": "devops-senior-engineer.prompt.md",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "allowedTools": [
+    "read"
+  ],
+  "toolsSettings": {
+    "write": {
+      "allowedPaths": [
+        "dev-new-features/.github/**",
+        "dev-new-features/Makefile",
+        "dev-new-features/bin/**",
+        "dev-new-features/tests/**",
+        "dev-new-features/*.yml",
+        "dev-new-features/*.yaml",
+        "dev-new-features/*.sh",
+        "dev-new-features/*.ps1",
+        "dev-new-features/*.toml"
+      ]
+    },
+    "shell": {
+      "allowedCommands": [
+        "make build",
+        "make test",
+        "make dist",
+        "make clean",
+        "make version",
+        "make linux",
+        "make darwin",
+        "make windows",
+        "git status",
+        "git log --oneline -10",
+        "git branch",
+        "git diff --name-only",
+        "git -C dev-new-features status",
+        "git -C dev-new-features log --oneline -10",
+        "git -C dev-new-features branch",
+        "git -C dev-new-features diff",
+        "git -C dev-new-features diff --name-only",
+        "git -C dev-new-features diff --stat"
+      ]
+    }
+  },
+  "resources": [
+    "file://dev-new-features/README.md",
+    "file://dev-new-features/Makefile",
+    "file://dev-new-features/.github/workflows/*.yml",
+    "file://dev-new-features/.github/scripts/*.ps1",
+    "file://dev-new-features/chocolatey/**",
+    "file://dev-new-features/tests/e2e/**",
+    "file://dev-new-features/diffusion-test/**",
+    "file://dev-new-features/diffusion-update/**"
+  ],
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "git -C dev-new-features branch --show-current",
+        "timeout_ms": 5000
+      },
+      {
+        "command": "git -C dev-new-features status --porcelain",
+        "timeout_ms": 5000
+      }
+    ]
+  },
+  "model": "claude-sonnet-5",
+  "welcomeMessage": "DevOps Senior Engineer ready. Working inside dev-new-features/. What CI/CD or build pipeline work do you need?"
+}

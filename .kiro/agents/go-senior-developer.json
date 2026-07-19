@@ -1,0 +1,73 @@
+{
+  "name": "go-senior-developer",
+  "description": "Senior Go developer specialized in the Terraform Provider of Diffusion - terraform and opentofu diffusion deploy module that works directly from Terraform/Opentofu hcl. Works inside dev-new-features/. ",
+  "promptFile": ".kiro/prompts/go-senior-developer.txt",
+  "tools": [
+    "read",
+    "write",
+    "shell"
+  ],
+  "allowedTools": [
+    "read"
+  ],
+  "toolsSettings": {
+    "write": {
+      "allowedPaths": [
+        "dev-new-features/cmd/**",
+        "dev-new-features/internal/**",
+        "dev-new-features/tests/**",
+        "dev-new-features/go.mod",
+        "dev-new-features/go.sum",
+        "dev-new-features/Makefile",
+        "dev-new-features/*.go",
+        "dev-new-features/*.md"
+      ]
+    },
+    "shell": {
+      "allowedCommands": [
+        "go build ./...",
+        "go test ./...",
+        "go test -v ./...",
+        "go test -run .* ./...",
+        "go vet ./...",
+        "go fmt ./...",
+        "go mod tidy",
+        "go mod download",
+        "make build",
+        "make test",
+        "make clean",
+        "make version",
+        "git -C dev-new-features status",
+        "git -C dev-new-features diff",
+        "git -C dev-new-features diff --name-only",
+        "git -C dev-new-features log --oneline -10",
+        "git -C dev-new-features branch"
+      ]
+    }
+  },
+  "resources": [
+    "file://dev-new-features/README.md",
+    "file://dev-new-features/go.mod",
+    "file://dev-new-features/Makefile",
+    "file://dev-new-features/internal/**/*.go",
+    "file://dev-new-features/cmd/**/*.go"
+  ],
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "go version",
+        "timeout_ms": 5000
+      },
+      {
+        "command": "git -C dev-new-features branch --show-current",
+        "timeout_ms": 5000
+      },
+      {
+        "command": "git -C dev-new-features status --short",
+        "timeout_ms": 5000
+      }
+    ]
+  },
+  "model": "claude-sonnet-5",
+  "welcomeMessage": "Go Senior Developer ready. Working inside dev-new-features/. What would you like to build or improve?"
+}

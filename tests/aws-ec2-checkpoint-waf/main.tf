@@ -17,7 +17,7 @@
 # =============================================================================
 
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.4"
 
   required_providers {
     aws = {
@@ -27,10 +27,6 @@ terraform {
     tls = {
       source  = "hashicorp/tls"
       version = ">= 4.0"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = ">= 2.0"
     }
     diffusion = {
       source  = "Polar-Team/diffusion"
@@ -70,15 +66,6 @@ resource "tls_private_key" "ssh" {
 resource "aws_key_pair" "diffusion" {
   key_name_prefix = "diffusion-test-"
   public_key      = tls_private_key.ssh.public_key_openssh
-}
-
-# Write private key to ~/.ssh so diffusion's container can mount it via /root/.ssh.
-# The container only mounts the user's ~/.ssh directory — project-local paths won't
-# be visible inside the probe/deploy containers.
-resource "local_sensitive_file" "ssh_key" {
-  content         = tls_private_key.ssh.private_key_openssh
-  filename        = pathexpand("~/.ssh/diffusion-test-ed25519")
-  file_permission = "0600"
 }
 
 # -----------------------------------------------------------------------------
@@ -160,10 +147,9 @@ resource "diffusion_deploy" "checkpoint_waf" {
   hosts = {
     "waf-01" = {
       vars = {
-        ansible_host                 = aws_instance.waf.public_ip
-        ansible_user                 = "ubuntu"
-        ansible_ssh_private_key_file = local_sensitive_file.ssh_key.filename
-        ansible_ssh_common_args      = "-o StrictHostKeyChecking=no"
+        ansible_host            = aws_instance.waf.public_ip
+        ansible_user            = "ubuntu"
+        ansible_ssh_common_args = "-o StrictHostKeyChecking=no"
       }
     }
   }
@@ -176,9 +162,38 @@ resource "diffusion_deploy" "checkpoint_waf" {
     ansible_python_interpreter = "/usr/bin/python3"
   }
 
+  ssh_private_key = tls_private_key.ssh.private_key_openssh
+
   skip_if_succeeded_within = "1h"
   host_wait_initial_delay  = "30s"
   host_wait_timeout        = "5m"
+}
+
+# -----------------------------------------------------------------------------
+# Post-deploy validation: verify remote host state via SSH
+# Uses terraform_data (built-in) — no additional providers needed.
+# -----------------------------------------------------------------------------
+
+resource "terraform_data" "validate_remote_state" {
+  depends_on = [diffusion_deploy.checkpoint_waf]
+
+  triggers_replace = [diffusion_deploy.checkpoint_waf.run_id]
+
+  connection {
+    type        = "ssh"
+    host        = aws_instance.waf.public_ip
+    user        = "ubuntu"
+    private_key = tls_private_key.ssh.private_key_openssh
+    timeout     = "2m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo 'Validating diffusion state on remote host...'",
+      "test -d ~/.diffusion/state",
+      "find ~/.diffusion/ -name '*checkpoint*' -o -name '*waf*' | grep -q .",
+    ]
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -197,4 +212,9 @@ output "ssh_private_key" {
   description = "Generated SSH private key (sensitive)"
   value       = tls_private_key.ssh.private_key_openssh
   sensitive   = true
+}
+
+output "validation_passed" {
+  description = "Whether post-deploy validation completed successfully"
+  value       = terraform_data.validate_remote_state.id != ""
 }
