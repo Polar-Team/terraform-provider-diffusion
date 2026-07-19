@@ -32,7 +32,7 @@ type DeployResourceModel struct {
 	Groups                types.Map         `tfsdk:"groups"`
 	Variables             types.Map         `tfsdk:"variables"`
 	ExtraVars             types.Map         `tfsdk:"extra_vars"`
-	SSHPrivateKey         types.String      `tfsdk:"ssh_private_key"`
+	SSHPrivateKeys        types.Map         `tfsdk:"ssh_private_keys"`
 	SkipIfSucceededWithin types.String      `tfsdk:"skip_if_succeeded_within"`
 	HostWaitInitialDelay  types.String      `tfsdk:"host_wait_initial_delay"`
 	HostWaitInterval      types.String      `tfsdk:"host_wait_interval"`
@@ -145,10 +145,11 @@ has changed.`,
 				ElementType:         types.StringType,
 				MarkdownDescription: "Extra variables passed to `ansible-playbook --extra-vars`.",
 			},
-			"ssh_private_key": schema.StringAttribute{
+			"ssh_private_keys": schema.MapAttribute{
 				Optional:            true,
 				Sensitive:           true,
-				MarkdownDescription: "SSH private key in PEM format (raw text). The provider base64-encodes it automatically before passing to diffusion. Use directly with `tls_private_key.*.private_key_pem`.",
+				ElementType:         types.StringType,
+				MarkdownDescription: "Map of hostname → SSH private key (PEM text). Each key is base64-encoded by the provider and decoded inside the container at runtime. Use `\"*\"` as the key to apply a single key to all hosts. Example: `{ \"*\" = tls_private_key.deploy.private_key_pem }` or `{ \"web01\" = tls_private_key.web.private_key_pem, \"db01\" = tls_private_key.db.private_key_pem }`.",
 			},
 			"skip_if_succeeded_within": schema.StringAttribute{
 				Optional:            true,
@@ -304,8 +305,18 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 	extraVars, d := extractStringMap(ctx, data.ExtraVars)
 	diags.Append(d...)
 
+	// SSH private keys (map of host → PEM, encoded to base64 by provider)
+	sshKeys, d := extractStringMap(ctx, data.SSHPrivateKeys)
+	diags.Append(d...)
+
 	if diags.HasError() {
 		return DiffusionRunConfig{}, diags
+	}
+
+	// Base64-encode each SSH key value.
+	sshKeysBase64 := make(map[string]string, len(sshKeys))
+	for host, pem := range sshKeys {
+		sshKeysBase64[host] = base64.StdEncoding.EncodeToString([]byte(pem))
 	}
 
 	// Pre-render inventory for the computed attribute
@@ -333,7 +344,7 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 		Groups:                groups,
 		GlobalVars:            globalVars,
 		ExtraVars:             extraVars,
-		SSHPrivateKeyBase64:   base64EncodeIfSet(valueOrEmpty(data.SSHPrivateKey)),
+		SSHPrivateKeys:        sshKeysBase64,
 		SkipIfSucceededWithin: valueOrEmpty(data.SkipIfSucceededWithin),
 		InventoryRendered:     rendered,
 	}
@@ -372,14 +383,4 @@ func coalesce(values ...string) string {
 		}
 	}
 	return ""
-}
-
-// base64EncodeIfSet returns the base64-encoded version of s, or "" if s is empty.
-// This allows the provider to accept raw PEM text and encode it transparently
-// before passing to the diffusion CLI which expects base64.
-func base64EncodeIfSet(s string) string {
-	if s == "" {
-		return ""
-	}
-	return base64.StdEncoding.EncodeToString([]byte(s))
 }

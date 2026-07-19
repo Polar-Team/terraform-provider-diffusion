@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"encoding/base64"
 	"testing"
 
 	"github.com/Polar-Team/terraform-provider-diffusion/internal/deploy"
@@ -156,55 +155,51 @@ func TestComputeRunID_Length(t *testing.T) {
 	}
 }
 
-func TestBuildArgs_SSHKeyBase64Included(t *testing.T) {
-	c := DiffusionRunConfig{SSHPrivateKeyBase64: "Zm9vYmFy"}
+func TestBuildArgs_SSHKeyIncluded(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeys: map[string]string{"*": "Zm9vYmFy"}}
 	args := buildArgs(c)
-	if !hasArg(args, "--ssh-key-base64", "Zm9vYmFy") {
-		t.Errorf("expected --ssh-key-base64 Zm9vYmFy, got %v", args)
+	if !hasArg(args, "--ssh-key", "*=Zm9vYmFy") {
+		t.Errorf("expected --ssh-key *=Zm9vYmFy, got %v", args)
 	}
 }
 
-func TestBuildArgs_SSHKeyBase64OmittedWhenEmpty(t *testing.T) {
-	c := DiffusionRunConfig{SSHPrivateKeyBase64: ""}
+func TestBuildArgs_SSHKeyOmittedWhenEmpty(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeys: nil}
 	args := buildArgs(c)
-	if hasFlag(args, "--ssh-key-base64") {
-		t.Errorf("expected --ssh-key-base64 absent when empty, got %v", args)
+	if hasFlag(args, "--ssh-key") {
+		t.Errorf("expected --ssh-key absent when nil, got %v", args)
 	}
 }
 
-func TestBase64EncodeIfSet(t *testing.T) {
-	if got := base64EncodeIfSet(""); got != "" {
-		t.Errorf("expected empty string for empty input, got %q", got)
+func TestBuildArgs_SSHKeyPerHost(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeys: map[string]string{
+		"web01": "a2V5MQ==",
+		"db01":  "a2V5Mg==",
+	}}
+	args := buildArgs(c)
+	found := 0
+	for i, a := range args {
+		if a == "--ssh-key" && i+1 < len(args) {
+			found++
+		}
 	}
-
-	pem := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmU\n-----END OPENSSH PRIVATE KEY-----\n"
-	got := base64EncodeIfSet(pem)
-	want := base64.StdEncoding.EncodeToString([]byte(pem))
-	if got != want {
-		t.Errorf("expected %q, got %q", want, got)
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(got)
-	if err != nil {
-		t.Fatalf("failed to decode: %v", err)
-	}
-	if string(decoded) != pem {
-		t.Errorf("round-trip mismatch: expected %q, got %q", pem, string(decoded))
+	if found != 2 {
+		t.Errorf("expected 2 --ssh-key flags, got %d in %v", found, args)
 	}
 }
 
-func TestRedactArgs_SSHKeyBase64(t *testing.T) {
-	input := []string{"deploy", "--ssh-key-base64", "c2VjcmV0a2V5"}
+func TestRedactArgs_SSHKey(t *testing.T) {
+	input := []string{"deploy", "--ssh-key", "*=c2VjcmV0a2V5"}
 	inputCopy := make([]string, len(input))
 	copy(inputCopy, input)
 
 	redacted := redactArgs(input)
 
-	if !hasArg(redacted, "--ssh-key-base64", "***") {
-		t.Errorf("expected --ssh-key-base64 value redacted to ***, got %v", redacted)
+	if !hasArg(redacted, "--ssh-key", "*=***") {
+		t.Errorf("expected --ssh-key value redacted to *=***, got %v", redacted)
 	}
 	for _, a := range redacted {
-		if a == "c2VjcmV0a2V5" {
+		if a == "*=c2VjcmV0a2V5" {
 			t.Errorf("raw value should not appear in redacted args, got %v", redacted)
 		}
 	}

@@ -48,7 +48,7 @@ type DiffusionRunConfig struct {
 	Groups                []deploy.InventoryGroup
 	GlobalVars            map[string]string
 	ExtraVars             map[string]string
-	SSHPrivateKeyBase64   string
+	SSHPrivateKeys        map[string]string // host → base64-encoded key
 	SkipIfSucceededWithin string
 	InventoryRendered     string
 }
@@ -148,8 +148,8 @@ func buildArgs(cfg DiffusionRunConfig) []string {
 		args = append(args, "--skip-period", cfg.SkipIfSucceededWithin)
 	}
 
-	if cfg.SSHPrivateKeyBase64 != "" {
-		args = append(args, "--ssh-key-base64", cfg.SSHPrivateKeyBase64)
+	for host, keyB64 := range cfg.SSHPrivateKeys {
+		args = append(args, "--ssh-key", host+"="+keyB64)
 	}
 
 	if cfg.HostWaitInitialDelay != "" {
@@ -192,15 +192,19 @@ func redactArgs(args []string) []string {
 	copy(redacted, args)
 	for i, a := range redacted {
 		lower := strings.ToLower(a)
-		if strings.Contains(lower, "password") || strings.Contains(lower, "token") ||
-			strings.Contains(lower, "ssh-key-base64") {
+		if strings.Contains(lower, "password") || strings.Contains(lower, "token") {
 			if parts := strings.SplitN(a, "=", 2); len(parts) == 2 {
 				redacted[i] = parts[0] + "=***"
 			}
 		}
-		// Redact the value following --ssh-key-base64 flag (positional arg style).
-		if i > 0 && strings.Contains(strings.ToLower(redacted[i-1]), "ssh-key-base64") && !strings.HasPrefix(a, "-") {
-			redacted[i] = "***"
+		// Redact the value following --ssh-key flag (it contains the base64 key).
+		if i > 0 && redacted[i-1] == "--ssh-key" && !strings.HasPrefix(a, "-") {
+			// Keep the hostname prefix, redact the key value.
+			if eqIdx := strings.Index(a, "="); eqIdx >= 0 {
+				redacted[i] = a[:eqIdx+1] + "***"
+			} else {
+				redacted[i] = "***"
+			}
 		}
 	}
 	return redacted
