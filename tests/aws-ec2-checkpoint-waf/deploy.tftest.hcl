@@ -125,21 +125,11 @@ run "deploy_checkpoint_waf" {
 }
 
 # -----------------------------------------------------------------------------
-# Run: Validate remote host state via SSH (helper module)
+# Run: Validate remote host state (inlined — no separate module needed)
 # -----------------------------------------------------------------------------
 
 run "validate_remote_state" {
   command = apply
-
-  module {
-    source = "./tests/validate"
-  }
-
-  variables {
-    host            = run.deploy_checkpoint_waf.instance_public_ip
-    ssh_user        = "ubuntu"
-    ssh_private_key = run.deploy_checkpoint_waf.ssh_private_key
-  }
 
   # Diffusion state directory must exist
   assert {

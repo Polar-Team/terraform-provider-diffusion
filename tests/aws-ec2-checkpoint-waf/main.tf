@@ -32,6 +32,14 @@ terraform {
       source  = "hashicorp/local"
       version = ">= 2.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = ">= 3.0"
+    }
+    external = {
+      source  = "hashicorp/external"
+      version = ">= 2.0"
+    }
     diffusion = {
       source  = "Polar-Team/diffusion"
       version = ">= 0.1.0"
@@ -182,6 +190,47 @@ resource "diffusion_deploy" "checkpoint_waf" {
 }
 
 # -----------------------------------------------------------------------------
+# Post-deploy validation: verify remote host state via SSH
+# -----------------------------------------------------------------------------
+
+resource "null_resource" "validate_remote_state" {
+  depends_on = [diffusion_deploy.checkpoint_waf]
+
+  triggers = {
+    deploy_run_id = diffusion_deploy.checkpoint_waf.run_id
+  }
+
+  connection {
+    type        = "ssh"
+    host        = aws_instance.waf.public_ip
+    user        = "ubuntu"
+    private_key = tls_private_key.ssh.private_key_openssh
+    timeout     = "2m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo 'Validating diffusion state on remote host...'",
+      "test -d ~/.diffusion/state && echo 'DIFFUSION_STATE_EXISTS=true' || echo 'DIFFUSION_STATE_EXISTS=false'",
+    ]
+  }
+}
+
+data "external" "diffusion_state_check" {
+  depends_on = [null_resource.validate_remote_state]
+
+  program = [
+    "bash", "-c",
+    <<-EOT
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -i ${local_sensitive_file.ssh_key.filename} \
+        ubuntu@${aws_instance.waf.public_ip} \
+        'echo "{\"state_exists\": \"'$(test -d ~/.diffusion/state && echo true || echo false)'\", \"role_installed\": \"'$(find ~/.diffusion/ -name "*checkpoint*" -o -name "*waf*" 2>/dev/null | head -1 | grep -q . && echo true || echo false)'\"}"'
+    EOT
+  ]
+}
+
+# -----------------------------------------------------------------------------
 # Outputs
 # -----------------------------------------------------------------------------
 
@@ -197,4 +246,14 @@ output "ssh_private_key" {
   description = "Generated SSH private key (sensitive)"
   value       = tls_private_key.ssh.private_key_openssh
   sensitive   = true
+}
+
+output "diffusion_state_exists" {
+  description = "Whether ~/.diffusion/state directory exists on remote host"
+  value       = data.external.diffusion_state_check.result.state_exists == "true"
+}
+
+output "role_installed" {
+  description = "Whether the checkpoint WAF role artifacts exist on remote host"
+  value       = data.external.diffusion_state_check.result.role_installed == "true"
 }
