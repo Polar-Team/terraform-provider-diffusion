@@ -317,18 +317,8 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 	extraVars, d := extractStringMap(ctx, data.ExtraVars)
 	diags.Append(d...)
 
-	// SSH private keys (map of host → PEM, encoded to base64 by provider)
-	sshKeys, d := extractStringMap(ctx, data.SSHPrivateKeys)
-	diags.Append(d...)
-
 	if diags.HasError() {
 		return DiffusionRunConfig{}, diags
-	}
-
-	// Base64-encode each SSH key value.
-	sshKeysBase64 := make(map[string]string, len(sshKeys))
-	for host, pem := range sshKeys {
-		sshKeysBase64[host] = base64.StdEncoding.EncodeToString([]byte(pem))
 	}
 
 	// Pre-render inventory for the computed attribute

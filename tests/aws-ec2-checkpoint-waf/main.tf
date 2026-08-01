@@ -159,7 +159,11 @@ resource "diffusion_deploy" "checkpoint_waf" {
   }
 
   variables = {
-    ansible_python_interpreter = "/usr/bin/python3"
+    all = {
+      vars = {
+        ansible_python_interpreter = "/usr/bin/python3"
+      }
+    }
   }
 
   ssh_private_keys = {
