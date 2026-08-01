@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -158,6 +159,9 @@ has changed.`,
 				Sensitive:           true,
 				ElementType:         types.StringType,
 				MarkdownDescription: "Map of named SSH private keys in PEM format (raw text). Each key is base64-encoded automatically before passing to diffusion. Example: `{ default = tls_private_key.ssh.private_key_openssh }`.",
+				Validators: []validator.Map{
+					MapKeyNoEquals(),
+				},
 			},
 			"skip_if_succeeded_within": schema.StringAttribute{
 				Optional:            true,
