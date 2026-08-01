@@ -135,10 +135,18 @@ has changed.`,
 				ElementType:         types.ListType{ElemType: types.StringType},
 				MarkdownDescription: "Map of group name → list of host names.",
 			},
-			"variables": schema.MapAttribute{
+			"variables": schema.MapNestedAttribute{
 				Optional:            true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "Global inventory variables applied to the `all` group.",
+				MarkdownDescription: "Map of group name → group variables. Use key `\"all\"` for global variables applied to the all group. Other keys set variables on the corresponding child group.",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"vars": schema.MapAttribute{
+							Optional:            true,
+							ElementType:         types.StringType,
+							MarkdownDescription: "Variables for this group.",
+						},
+					},
+				},
 			},
 			"extra_vars": schema.MapAttribute{
 				Optional:            true,
@@ -297,8 +305,8 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 		return DiffusionRunConfig{}, diags
 	}
 
-	// Variables
-	globalVars, d := extractStringMap(ctx, data.Variables)
+	// Variables (per-group)
+	groupVars, d := extractGroupVars(ctx, data.Variables)
 	diags.Append(d...)
 
 	extraVars, d := extractStringMap(ctx, data.ExtraVars)
@@ -309,7 +317,7 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 	}
 
 	// Pre-render inventory for the computed attribute
-	rendered, err := buildInventoryRendered(hosts, groups, globalVars)
+	rendered, err := buildInventoryRendered(hosts, groups, groupVars)
 	if err != nil {
 		diags.AddError("Inventory render failed", err.Error())
 		return DiffusionRunConfig{}, diags
@@ -331,7 +339,7 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 		Playbook:              valueOrEmpty(data.Playbook),
 		Hosts:                 hosts,
 		Groups:                groups,
-		GlobalVars:            globalVars,
+		GroupVars:             groupVars,
 		ExtraVars:             extraVars,
 		SSHPrivateKeyBase64:   base64EncodeIfSet(valueOrEmpty(data.SSHPrivateKey)),
 		SkipIfSucceededWithin: valueOrEmpty(data.SkipIfSucceededWithin),
@@ -341,11 +349,11 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 	return cfg, diags
 }
 
-func buildInventoryRendered(hosts []deploy.InventoryHost, groups []deploy.InventoryGroup, vars map[string]string) (string, error) {
+func buildInventoryRendered(hosts []deploy.InventoryHost, groups []deploy.InventoryGroup, groupVars deploy.GroupVars) (string, error) {
 	if len(hosts) == 0 {
 		return "", nil
 	}
-	data, err := deploy.BuildInventory(hosts, groups, vars)
+	data, err := deploy.BuildInventory(hosts, groups, groupVars)
 	if err != nil {
 		return "", err
 	}

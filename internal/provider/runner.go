@@ -46,7 +46,7 @@ type DiffusionRunConfig struct {
 	Playbook              string
 	Hosts                 []deploy.InventoryHost
 	Groups                []deploy.InventoryGroup
-	GlobalVars            map[string]string
+	GroupVars             deploy.GroupVars
 	ExtraVars             map[string]string
 	SSHPrivateKeyBase64   string
 	SkipIfSucceededWithin string
@@ -136,8 +136,10 @@ func buildArgs(cfg DiffusionRunConfig) []string {
 		args = append(args, "--group", g.Name+"="+strings.Join(g.Hosts, ","))
 	}
 
-	for k, v := range cfg.GlobalVars {
-		args = append(args, "--var", k+"="+v)
+	for groupName, vars := range cfg.GroupVars {
+		for k, v := range vars {
+			args = append(args, "--var", groupName+"."+k+"="+v)
+		}
 	}
 
 	for k, v := range cfg.ExtraVars {
@@ -179,9 +181,11 @@ func computeRunID(cfg DiffusionRunConfig) string {
 			panic(err)
 		}
 	}
-	for k, v := range cfg.GlobalVars {
-		if _, err := fmt.Fprintf(h, "var:%s=%s\n", k, v); err != nil {
-			panic(err)
+	for groupName, vars := range cfg.GroupVars {
+		for k, v := range vars {
+			if _, err := fmt.Fprintf(h, "var:%s.%s=%s\n", groupName, k, v); err != nil {
+				panic(err)
+			}
 		}
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
