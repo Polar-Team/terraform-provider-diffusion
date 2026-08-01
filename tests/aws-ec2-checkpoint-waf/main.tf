@@ -162,7 +162,9 @@ resource "diffusion_deploy" "checkpoint_waf" {
     ansible_python_interpreter = "/usr/bin/python3"
   }
 
-  ssh_private_key = tls_private_key.ssh.private_key_openssh
+  ssh_private_keys = {
+    default = tls_private_key.ssh.private_key_openssh
+  }
 
   skip_if_succeeded_within = "1h"
   host_wait_initial_delay  = "30s"

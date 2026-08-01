@@ -48,7 +48,7 @@ type DiffusionRunConfig struct {
 	Groups                []deploy.InventoryGroup
 	GroupVars             deploy.GroupVars
 	ExtraVars             map[string]string
-	SSHPrivateKeyBase64   string
+	SSHPrivateKeysBase64  map[string]string
 	SkipIfSucceededWithin string
 	InventoryRendered     string
 }
@@ -150,8 +150,10 @@ func buildArgs(cfg DiffusionRunConfig) []string {
 		args = append(args, "--skip-period", cfg.SkipIfSucceededWithin)
 	}
 
-	if cfg.SSHPrivateKeyBase64 != "" {
-		args = append(args, "--ssh-key-base64", cfg.SSHPrivateKeyBase64)
+	for name, key := range cfg.SSHPrivateKeysBase64 {
+		if key != "" {
+			args = append(args, "--ssh-key-base64", name+"="+key)
+		}
 	}
 
 	if cfg.HostWaitInitialDelay != "" {

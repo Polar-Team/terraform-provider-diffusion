@@ -192,6 +192,7 @@ resource "diffusion_deploy" "app" {
 - `groups` (Map of List of String) Map of group name → list of host names.
 - `variables` (Map of String) Global inventory variables applied to the `all` group.
 - `extra_vars` (Map of String) Extra variables passed to `ansible-playbook --extra-vars`.
+- `ssh_private_keys` (Map of String, Sensitive) Map of named SSH private keys in PEM format (raw text). Each value is base64-encoded automatically before passing to diffusion. Example: `{ default = tls_private_key.ssh.private_key_openssh }`.
 - `skip_if_succeeded_within` (String) Skip re-deploy if the last run succeeded within this period and inputs are identical. Go duration string (e.g. `"24h"`). Empty means always deploy.
 - `host_wait_initial_delay` (String) Override provider default initial delay before first host probe (Go duration).
 - `host_wait_interval` (String) Override provider default interval between host probes (Go duration).
