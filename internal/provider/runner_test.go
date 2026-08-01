@@ -157,18 +157,44 @@ func TestComputeRunID_Length(t *testing.T) {
 }
 
 func TestBuildArgs_SSHKeyBase64Included(t *testing.T) {
-	c := DiffusionRunConfig{SSHPrivateKeyBase64: "Zm9vYmFy"}
+	c := DiffusionRunConfig{SSHPrivateKeysBase64: map[string]string{"default": "Zm9vYmFy"}}
 	args := buildArgs(c)
-	if !hasArg(args, "--ssh-key-base64", "Zm9vYmFy") {
-		t.Errorf("expected --ssh-key-base64 Zm9vYmFy, got %v", args)
+	if !hasArg(args, "--ssh-key-base64", "default=Zm9vYmFy") {
+		t.Errorf("expected --ssh-key-base64 default=Zm9vYmFy, got %v", args)
 	}
 }
 
 func TestBuildArgs_SSHKeyBase64OmittedWhenEmpty(t *testing.T) {
-	c := DiffusionRunConfig{SSHPrivateKeyBase64: ""}
+	c := DiffusionRunConfig{SSHPrivateKeysBase64: nil}
 	args := buildArgs(c)
 	if hasFlag(args, "--ssh-key-base64") {
-		t.Errorf("expected --ssh-key-base64 absent when empty, got %v", args)
+		t.Errorf("expected --ssh-key-base64 absent when nil, got %v", args)
+	}
+}
+
+func TestBuildArgs_SSHKeyBase64MultipleKeys(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeysBase64: map[string]string{
+		"deploy": "a2V5MQ==",
+		"backup": "a2V5Mg==",
+	}}
+	args := buildArgs(c)
+	foundDeploy := false
+	foundBackup := false
+	for i, a := range args {
+		if a == "--ssh-key-base64" && i+1 < len(args) {
+			if args[i+1] == "deploy=a2V5MQ==" {
+				foundDeploy = true
+			}
+			if args[i+1] == "backup=a2V5Mg==" {
+				foundBackup = true
+			}
+		}
+	}
+	if !foundDeploy {
+		t.Errorf("expected --ssh-key-base64 deploy=a2V5MQ==, got %v", args)
+	}
+	if !foundBackup {
+		t.Errorf("expected --ssh-key-base64 backup=a2V5Mg==, got %v", args)
 	}
 }
 
