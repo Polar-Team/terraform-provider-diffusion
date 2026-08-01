@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -135,10 +136,18 @@ has changed.`,
 				ElementType:         types.ListType{ElemType: types.StringType},
 				MarkdownDescription: "Map of group name → list of host names.",
 			},
-			"variables": schema.MapAttribute{
+			"variables": schema.MapNestedAttribute{
 				Optional:            true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "Global inventory variables applied to the `all` group.",
+				MarkdownDescription: "Map of group name → group variables. Use key `\"all\"` for global variables applied to the all group. Other keys set variables on the corresponding child group.",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"vars": schema.MapAttribute{
+							Optional:            true,
+							ElementType:         types.StringType,
+							MarkdownDescription: "Variables for this group.",
+						},
+					},
+				},
 			},
 			"extra_vars": schema.MapAttribute{
 				Optional:            true,
@@ -149,7 +158,10 @@ has changed.`,
 				Optional:            true,
 				Sensitive:           true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "Map of hostname → SSH private key (PEM text). Each key is base64-encoded by the provider and decoded inside the container at runtime. Use `\"*\"` as the key to apply a single key to all hosts. Example: `{ \"*\" = tls_private_key.deploy.private_key_pem }` or `{ \"web01\" = tls_private_key.web.private_key_pem, \"db01\" = tls_private_key.db.private_key_pem }`.",
+				MarkdownDescription: "Map of named SSH private keys in PEM format (raw text). Each key is base64-encoded automatically before passing to diffusion. Example: `{ default = tls_private_key.ssh.private_key_openssh }`.",
+				Validators: []validator.Map{
+					MapKeyNoEquals(),
+				},
 			},
 			"skip_if_succeeded_within": schema.StringAttribute{
 				Optional:            true,
@@ -298,8 +310,8 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 		return DiffusionRunConfig{}, diags
 	}
 
-	// Variables
-	globalVars, d := extractStringMap(ctx, data.Variables)
+	// Variables (per-group)
+	groupVars, d := extractGroupVars(ctx, data.Variables)
 	diags.Append(d...)
 
 	extraVars, d := extractStringMap(ctx, data.ExtraVars)
@@ -320,7 +332,7 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 	}
 
 	// Pre-render inventory for the computed attribute
-	rendered, err := buildInventoryRendered(hosts, groups, globalVars)
+	rendered, err := buildInventoryRendered(hosts, groups, groupVars)
 	if err != nil {
 		diags.AddError("Inventory render failed", err.Error())
 		return DiffusionRunConfig{}, diags
@@ -342,9 +354,9 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 		Playbook:              valueOrEmpty(data.Playbook),
 		Hosts:                 hosts,
 		Groups:                groups,
-		GlobalVars:            globalVars,
+		GroupVars:             groupVars,
 		ExtraVars:             extraVars,
-		SSHPrivateKeys:        sshKeysBase64,
+		SSHPrivateKeysBase64:  base64EncodeMap(ctx, data.SSHPrivateKeys, &diags),
 		SkipIfSucceededWithin: valueOrEmpty(data.SkipIfSucceededWithin),
 		InventoryRendered:     rendered,
 	}
@@ -352,11 +364,11 @@ func (r *DeployResource) buildRunConfig(ctx context.Context, data *DeployResourc
 	return cfg, diags
 }
 
-func buildInventoryRendered(hosts []deploy.InventoryHost, groups []deploy.InventoryGroup, vars map[string]string) (string, error) {
+func buildInventoryRendered(hosts []deploy.InventoryHost, groups []deploy.InventoryGroup, groupVars deploy.GroupVars) (string, error) {
 	if len(hosts) == 0 {
 		return "", nil
 	}
-	data, err := deploy.BuildInventory(hosts, groups, vars)
+	data, err := deploy.BuildInventory(hosts, groups, groupVars)
 	if err != nil {
 		return "", err
 	}
@@ -383,4 +395,35 @@ func coalesce(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// base64EncodeIfSet returns the base64-encoded version of s, or "" if s is empty.
+// This allows the provider to accept raw PEM text and encode it transparently
+// before passing to the diffusion CLI which expects base64.
+func base64EncodeIfSet(s string) string {
+	if s == "" {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+
+// base64EncodeMap extracts a types.Map of string values and returns a map
+// where each value has been base64-encoded. Returns nil for null/unknown maps.
+func base64EncodeMap(ctx context.Context, m types.Map, diags *diag.Diagnostics) map[string]string {
+	if m.IsNull() || m.IsUnknown() {
+		return nil
+	}
+	elements := make(map[string]types.String, len(m.Elements()))
+	d := m.ElementsAs(ctx, &elements, false)
+	diags.Append(d...)
+	if d.HasError() {
+		return nil
+	}
+	result := make(map[string]string, len(elements))
+	for k, v := range elements {
+		if !v.IsNull() && !v.IsUnknown() && v.ValueString() != "" {
+			result[k] = base64.StdEncoding.EncodeToString([]byte(v.ValueString()))
+		}
+	}
+	return result
 }
