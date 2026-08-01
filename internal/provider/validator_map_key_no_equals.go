@@ -10,7 +10,7 @@ import (
 
 // mapKeyNoEquals validates that map keys do not contain the '=' character.
 // This is required because the CLI argument format uses '=' as a delimiter
-// (e.g., --ssh-key-base64 name=base64value), so keys containing '=' would
+// (e.g., --ssh-key name=base64value), so keys containing '=' would
 // break parsing on the consumer side.
 type mapKeyNoEquals struct{}
 

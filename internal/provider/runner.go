@@ -150,9 +150,13 @@ func buildArgs(cfg DiffusionRunConfig) []string {
 		args = append(args, "--skip-period", cfg.SkipIfSucceededWithin)
 	}
 
+	// The diffusion CLI flag is `--ssh-key` and it expects the key material to
+	// already be base64-encoded: "name=<base64>", or "*=<base64>" for all hosts.
+	// There is no --ssh-key-base64 flag; passing one makes the CLI exit with
+	// "unknown flag".
 	for name, key := range cfg.SSHPrivateKeysBase64 {
 		if key != "" {
-			args = append(args, "--ssh-key-base64", name+"="+key)
+			args = append(args, "--ssh-key", name+"="+key)
 		}
 	}
 
@@ -203,8 +207,8 @@ func redactArgs(args []string) []string {
 				redacted[i] = parts[0] + "=***"
 			}
 		}
-		// Redact the value following any --ssh-key* flag (it carries the private key).
-		// Covers --ssh-key-base64, which is what the provider actually emits.
+		// Redact the value following any --ssh-key* flag (it carries the private
+		// key material, base64-encoded but trivially reversible).
 		if i > 0 && strings.HasPrefix(redacted[i-1], "--ssh-key") && !strings.HasPrefix(a, "-") {
 			// Keep the key name prefix, redact the key material.
 			if eqIdx := strings.Index(a, "="); eqIdx >= 0 {
