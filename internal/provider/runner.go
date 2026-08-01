@@ -198,15 +198,20 @@ func redactArgs(args []string) []string {
 	copy(redacted, args)
 	for i, a := range redacted {
 		lower := strings.ToLower(a)
-		if strings.Contains(lower, "password") || strings.Contains(lower, "token") ||
-			strings.Contains(lower, "ssh-key-base64") {
+		if strings.Contains(lower, "password") || strings.Contains(lower, "token") {
 			if parts := strings.SplitN(a, "=", 2); len(parts) == 2 {
 				redacted[i] = parts[0] + "=***"
 			}
 		}
-		// Redact the value following --ssh-key-base64 flag (positional arg style).
-		if i > 0 && strings.Contains(strings.ToLower(redacted[i-1]), "ssh-key-base64") && !strings.HasPrefix(a, "-") {
-			redacted[i] = "***"
+		// Redact the value following any --ssh-key* flag (it carries the private key).
+		// Covers --ssh-key-base64, which is what the provider actually emits.
+		if i > 0 && strings.HasPrefix(redacted[i-1], "--ssh-key") && !strings.HasPrefix(a, "-") {
+			// Keep the key name prefix, redact the key material.
+			if eqIdx := strings.Index(a, "="); eqIdx >= 0 {
+				redacted[i] = a[:eqIdx+1] + "***"
+			} else {
+				redacted[i] = "***"
+			}
 		}
 	}
 	return redacted

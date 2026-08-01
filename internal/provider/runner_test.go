@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"encoding/base64"
 	"testing"
 
 	"github.com/Polar-Team/terraform-provider-diffusion/internal/deploy"
@@ -198,39 +197,88 @@ func TestBuildArgs_SSHKeyBase64MultipleKeys(t *testing.T) {
 	}
 }
 
-func TestBase64EncodeIfSet(t *testing.T) {
-	if got := base64EncodeIfSet(""); got != "" {
-		t.Errorf("expected empty string for empty input, got %q", got)
+func TestBuildArgs_SSHKeyBase64PerHost(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeysBase64: map[string]string{
+		"web01": "a2V5MQ==",
+		"db01":  "a2V5Mg==",
+	}}
+	args := buildArgs(c)
+	found := 0
+	for i, a := range args {
+		if a == "--ssh-key-base64" && i+1 < len(args) {
+			found++
+		}
 	}
+	if found != 2 {
+		t.Errorf("expected 2 --ssh-key-base64 flags, got %d in %v", found, args)
+	}
+}
 
-	pem := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmU\n-----END OPENSSH PRIVATE KEY-----\n"
-	got := base64EncodeIfSet(pem)
-	want := base64.StdEncoding.EncodeToString([]byte(pem))
-	if got != want {
-		t.Errorf("expected %q, got %q", want, got)
+func TestBuildArgs_SSHKeyBase64SkipsEmptyValues(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeysBase64: map[string]string{
+		"default": "Zm9vYmFy",
+		"unset":   "",
+	}}
+	args := buildArgs(c)
+	if !hasArg(args, "--ssh-key-base64", "default=Zm9vYmFy") {
+		t.Errorf("expected --ssh-key-base64 default=Zm9vYmFy, got %v", args)
 	}
+	if hasArg(args, "--ssh-key-base64", "unset=") {
+		t.Errorf("expected empty key value to be skipped, got %v", args)
+	}
+}
 
-	decoded, err := base64.StdEncoding.DecodeString(got)
-	if err != nil {
-		t.Fatalf("failed to decode: %v", err)
-	}
-	if string(decoded) != pem {
-		t.Errorf("round-trip mismatch: expected %q, got %q", pem, string(decoded))
+// The provider only emits the base64 flag; the legacy raw --ssh-key flag must
+// never appear, otherwise the CLI would receive unencoded key material.
+func TestBuildArgs_NoLegacyRawSSHKeyFlag(t *testing.T) {
+	c := DiffusionRunConfig{SSHPrivateKeysBase64: map[string]string{"default": "Zm9vYmFy"}}
+	args := buildArgs(c)
+	if hasFlag(args, "--ssh-key") {
+		t.Errorf("expected legacy --ssh-key flag to be absent, got %v", args)
 	}
 }
 
 func TestRedactArgs_SSHKeyBase64(t *testing.T) {
-	input := []string{"deploy", "--ssh-key-base64", "c2VjcmV0a2V5"}
+	input := []string{"deploy", "--ssh-key-base64", "default=c2VjcmV0a2V5"}
 	inputCopy := make([]string, len(input))
 	copy(inputCopy, input)
 
 	redacted := redactArgs(input)
 
-	if !hasArg(redacted, "--ssh-key-base64", "***") {
-		t.Errorf("expected --ssh-key-base64 value redacted to ***, got %v", redacted)
+	if !hasArg(redacted, "--ssh-key-base64", "default=***") {
+		t.Errorf("expected --ssh-key-base64 value redacted to default=***, got %v", redacted)
 	}
 	for _, a := range redacted {
-		if a == "c2VjcmV0a2V5" {
+		if a == "default=c2VjcmV0a2V5" {
+			t.Errorf("raw value should not appear in redacted args, got %v", redacted)
+		}
+	}
+	for i := range input {
+		if input[i] != inputCopy[i] {
+			t.Errorf("original input slice was mutated: expected %v, got %v", inputCopy, input)
+		}
+	}
+}
+
+func TestRedactArgs_SSHKeyBase64WithoutName(t *testing.T) {
+	redacted := redactArgs([]string{"deploy", "--ssh-key-base64", "c2VjcmV0a2V5"})
+	if !hasArg(redacted, "--ssh-key-base64", "***") {
+		t.Errorf("expected bare key value fully redacted, got %v", redacted)
+	}
+}
+
+func TestRedactArgs_SSHKey(t *testing.T) {
+	input := []string{"deploy", "--ssh-key", "*=c2VjcmV0a2V5"}
+	inputCopy := make([]string, len(input))
+	copy(inputCopy, input)
+
+	redacted := redactArgs(input)
+
+	if !hasArg(redacted, "--ssh-key", "*=***") {
+		t.Errorf("expected --ssh-key value redacted to *=***, got %v", redacted)
+	}
+	for _, a := range redacted {
+		if a == "*=c2VjcmV0a2V5" {
 			t.Errorf("raw value should not appear in redacted args, got %v", redacted)
 		}
 	}

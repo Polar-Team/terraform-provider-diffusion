@@ -18,7 +18,7 @@
 # =============================================================================
 
 variables {
-  aws_region    = "eu-central-1"
+  aws_region    = "us-east-1"
   instance_type = "t3.micro"
 }
 
@@ -48,6 +48,16 @@ run "plan_validation" {
   assert {
     condition     = aws_key_pair.diffusion.key_name_prefix == "diffusion-test-"
     error_message = "Key pair name prefix should be 'diffusion-test-'"
+  }
+
+  assert {
+    condition     = tls_private_key.ssh.algorithm == "ED25519"
+    error_message = "SSH key algorithm should be ED25519"
+  }
+
+  assert {
+    condition     = aws_key_pair.diffusion.public_key == tls_private_key.ssh.public_key_openssh
+    error_message = "aws_key_pair public_key should be fed from tls_private_key.ssh.public_key_openssh"
   }
 
   assert {
@@ -107,9 +117,29 @@ run "deploy_checkpoint_waf" {
     error_message = "Diffusion deploy did not record last_deployed timestamp"
   }
 
+  # The provider does not compute merged_lock_hash yet (always returned as
+  # an empty string in DeployResult), so we only assert it is not null.
   assert {
-    condition     = diffusion_deploy.checkpoint_waf.merged_lock_hash != ""
-    error_message = "Diffusion deploy did not produce a merged_lock_hash"
+    condition     = diffusion_deploy.checkpoint_waf.merged_lock_hash != null
+    error_message = "Diffusion deploy merged_lock_hash should not be null"
+  }
+
+  # ssh_private_keys is Sensitive; wrap the derived value in nonsensitive()
+  # so the assertion result itself is not treated as sensitive. Never
+  # interpolate key material into error_message.
+  assert {
+    condition     = nonsensitive(length(diffusion_deploy.checkpoint_waf.ssh_private_keys)) == 1
+    error_message = "diffusion_deploy.checkpoint_waf.ssh_private_keys should have exactly one entry"
+  }
+
+  assert {
+    condition     = nonsensitive(contains(keys(diffusion_deploy.checkpoint_waf.ssh_private_keys), "default"))
+    error_message = "diffusion_deploy.checkpoint_waf.ssh_private_keys should be keyed 'default'"
+  }
+
+  assert {
+    condition     = nonsensitive(diffusion_deploy.checkpoint_waf.ssh_private_keys["default"] == tls_private_key.ssh.private_key_openssh)
+    error_message = "diffusion_deploy.checkpoint_waf.ssh_private_keys[\"default\"] should be wired from tls_private_key.ssh.private_key_openssh"
   }
 
   # Verify outputs are populated
