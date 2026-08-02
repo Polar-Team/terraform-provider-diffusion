@@ -81,8 +81,13 @@ run "deploy_checkpoint_waf" {
 
   # Verify SSH key pair resources
   assert {
-    condition     = tls_private_key.ssh.algorithm == "ED25519"
-    error_message = "SSH key algorithm should be ED25519"
+    condition     = tls_private_key.ssh.algorithm == "RSA"
+    error_message = "SSH key algorithm should be RSA"
+  }
+
+  assert {
+    condition     = tls_private_key.ssh.rsa_bits == 2048
+    error_message = "SSH key RSA bits should be 2048"
   }
 
   assert {

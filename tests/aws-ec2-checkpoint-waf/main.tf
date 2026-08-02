@@ -60,7 +60,8 @@ provider "diffusion" {
 # -----------------------------------------------------------------------------
 
 resource "tls_private_key" "ssh" {
-  algorithm = "ED25519"
+  algorithm = "RSA"
+  rsa_bits  = 2048
 }
 
 resource "aws_key_pair" "diffusion" {
@@ -159,7 +160,17 @@ resource "diffusion_deploy" "checkpoint_waf" {
   }
 
   variables = {
-    ansible_python_interpreter = "/usr/bin/python3"
+    all = {
+      vars = {
+        ansible_python_interpreter = "/usr/bin/python3"
+      }
+    }
+    checkpoint_waf = {
+      vars = {
+        cp_waf_agent_cpu_limits = "1.6"
+        cp_waf_agent_mem_limits = "500MB"
+      }
+    }
   }
 
   ssh_private_keys = {

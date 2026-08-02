@@ -399,6 +399,11 @@ func base64EncodeIfSet(s string) string {
 
 // base64EncodeMap extracts a types.Map of string values and returns a map
 // where each value has been base64-encoded. Returns nil for null/unknown maps.
+//
+// PEM keys (SSH private keys) may arrive with literal "\n" escape sequences
+// instead of real newline characters — this happens when Terraform interpolates
+// multiline strings in certain contexts. We normalize these before encoding so
+// that base64 decoding on the container side produces a valid PEM file.
 func base64EncodeMap(ctx context.Context, m types.Map, diags *diag.Diagnostics) map[string]string {
 	if m.IsNull() || m.IsUnknown() {
 		return nil
@@ -412,7 +417,12 @@ func base64EncodeMap(ctx context.Context, m types.Map, diags *diag.Diagnostics) 
 	result := make(map[string]string, len(elements))
 	for k, v := range elements {
 		if !v.IsNull() && !v.IsUnknown() && v.ValueString() != "" {
-			result[k] = base64.StdEncoding.EncodeToString([]byte(v.ValueString()))
+			raw := v.ValueString()
+			// Normalize literal "\n" (two-char escape) to actual newlines.
+			// This handles PEM keys that arrive with escaped newlines instead
+			// of real line breaks.
+			raw = strings.ReplaceAll(raw, "\\n", "\n")
+			result[k] = base64.StdEncoding.EncodeToString([]byte(raw))
 		}
 	}
 	return result
