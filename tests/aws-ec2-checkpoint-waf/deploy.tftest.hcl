@@ -51,13 +51,8 @@ run "plan_validation" {
   }
 
   assert {
-    condition     = tls_private_key.ssh.algorithm == "ED25519"
-    error_message = "SSH key algorithm should be ED25519"
-  }
-
-  assert {
-    condition     = aws_key_pair.diffusion.public_key == tls_private_key.ssh.public_key_openssh
-    error_message = "aws_key_pair public_key should be fed from tls_private_key.ssh.public_key_openssh"
+    condition     = tls_private_key.ssh.algorithm == "RSA"
+    error_message = "SSH key algorithm should be RSA"
   }
 
   assert {

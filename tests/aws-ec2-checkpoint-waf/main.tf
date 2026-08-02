@@ -148,9 +148,8 @@ resource "diffusion_deploy" "checkpoint_waf" {
   hosts = {
     "waf-01" = {
       vars = {
-        ansible_host            = aws_instance.waf.public_ip
-        ansible_user            = "ubuntu"
-        ansible_ssh_common_args = "-o StrictHostKeyChecking=no"
+        ansible_host = aws_instance.waf.public_ip
+        ansible_user = "ubuntu"
       }
     }
   }
@@ -203,8 +202,7 @@ resource "terraform_data" "validate_remote_state" {
   provisioner "remote-exec" {
     inline = [
       "echo 'Validating diffusion state on remote host...'",
-      "test -d ~/.diffusion/state",
-      "find ~/.diffusion/ -name '*checkpoint*' -o -name '*waf*' | grep -q .",
+      "cat ~/.diffusion/state | grep success",
     ]
   }
 }
