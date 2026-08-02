@@ -158,7 +158,7 @@ has changed.`,
 				Optional:            true,
 				Sensitive:           true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "Map of named SSH private keys in PEM format (raw text). Each key is base64-encoded automatically before passing to diffusion. Example: `{ default = tls_private_key.ssh.private_key_openssh }`.",
+				MarkdownDescription: "Map of named SSH private keys in PEM format (raw text). Each value is base64-encoded automatically and passed to the diffusion CLI as `--ssh-key name=<base64>`. Use the name `*` to apply one key to all hosts. Example: `{ default = tls_private_key.ssh.private_key_openssh }`.",
 				Validators: []validator.Map{
 					MapKeyNoEquals(),
 				},
