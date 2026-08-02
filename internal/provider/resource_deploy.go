@@ -155,10 +155,22 @@ has changed.`,
 				MarkdownDescription: "Extra variables passed to `ansible-playbook --extra-vars`.",
 			},
 			"ssh_private_keys": schema.MapAttribute{
-				Optional:            true,
-				Sensitive:           true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "Map of named SSH private keys in PEM format (raw text). Each value is base64-encoded automatically and passed to the diffusion CLI as `--ssh-key name=<base64>`. Use the name `*` to apply one key to all hosts. Example: `{ default = tls_private_key.ssh.private_key_openssh }`.",
+				Optional:    true,
+				Sensitive:   true,
+				ElementType: types.StringType,
+				MarkdownDescription: `Map of named SSH private keys in PEM format (raw text). Each value is base64-encoded automatically before passing to diffusion.
+
+Key naming controls which hosts receive each key:
+
+- **Per-host**: use the inventory host name as key (e.g. ` + "`\"waf-01\"`" + `) — applies only to that host.
+- **Per-group**: prefix with ` + "`group:`" + ` (e.g. ` + "`\"group:checkpoint_waf\"`" + `) — applies to all hosts in that inventory group.
+- **Wildcard**: use ` + "`\"*\"`" + ` — applies to all hosts via ` + "`--private-key`" + ` flag.
+- **Fallback**: any other name (e.g. ` + "`\"default\"`" + `) — applies to all hosts that don't have a more specific key.
+
+Priority: per-host > group > fallback/wildcard.
+
+Example: ` + "`{ default = tls_private_key.ssh.private_key_openssh }`" + `
+Example: ` + "`{ \"group:webservers\" = tls_private_key.web.private_key_openssh }`",
 				Validators: []validator.Map{
 					MapKeyNoEquals(),
 				},
