@@ -102,8 +102,10 @@ jobs:
           EOF
 
       - name: Run tftest — aws-ec2-checkpoint-waf
+        env:
+          TF_LOG: DEBUG
         working-directory: tests/aws-ec2-checkpoint-waf
-        run: ${{ matrix.cli }} init && ${{ matrix.cli }} test -no-color
+        run: ${{ matrix.cli }} init && ${{ matrix.cli }} test -no-color -verbose
         timeout-minutes: 15
 
       - name: Cleanup on failure
